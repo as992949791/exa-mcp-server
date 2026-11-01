@@ -79,6 +79,55 @@ describe("registerWebSearchTool", () => {
     expect((result as any).content[0].text).toContain("First highlight");
   });
 
+  it("opts into dynamic highlights and preserves integration headers", async () => {
+    const { registerWebSearchTool } = await import("../../../src/tools/webSearch.js");
+    const server = new FakeMcpServer();
+    requestMock.mockResolvedValue(searchResponse);
+
+    registerWebSearchTool(server as any, { mcpSessionId: "session-123" });
+    const tool = server.getTool("web_search_exa");
+    const schema = tool.inputSchema as Record<string, { parse: (value: unknown) => unknown }>;
+
+    const result = await tool.handler({ query: "AI breakthroughs", dynamicHighlights: true });
+
+    expect(requestMock).toHaveBeenCalledWith(
+      "/search",
+      "POST",
+      expect.objectContaining({ contents: { highlights: { dynamic: true } } }),
+      undefined,
+      {
+        "x-exa-integration": "web-search-mcp",
+        "x-exa-mcp-session-id": "session-123",
+        "Exa-Beta": "dynamic-highlights-2026-08-28",
+      },
+    );
+    expect(schema.dynamicHighlights).toBeDefined();
+    expect(schema.dynamicHighlights.parse(true)).toBe(true);
+    expect((result as any).content[0].text).toContain("First highlight");
+  });
+
+  it.each([undefined, false])(
+    "keeps standard highlights when dynamicHighlights is %s",
+    async (dynamicHighlights) => {
+      const { registerWebSearchTool } = await import("../../../src/tools/webSearch.js");
+      const server = new FakeMcpServer();
+      requestMock.mockResolvedValue(searchResponse);
+      registerWebSearchTool(server as any);
+
+      await server
+        .getTool("web_search_exa")
+        .handler({ query: "AI breakthroughs", dynamicHighlights });
+
+      expect(requestMock).toHaveBeenCalledWith(
+        "/search",
+        "POST",
+        expect.objectContaining({ contents: { highlights: true } }),
+        undefined,
+        { "x-exa-integration": "web-search-mcp" },
+      );
+    },
+  );
+
   it("uses an instant default search type when configured", async () => {
     const { registerWebSearchTool } = await import("../../../src/tools/webSearch.js");
     const server = new FakeMcpServer();

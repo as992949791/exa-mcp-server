@@ -4,7 +4,7 @@ import { ExaSearchRequest, ExaSearchResponse } from "../types.js";
 import { createRequestLogger } from "../utils/logger.js";
 import { retryWithBackoff, formatToolError, withTimeout } from "../utils/errorHandler.js";
 import { sanitizeSearchNotices, sanitizeSearchResponse } from "../utils/exaResponseSanitizer.js";
-import { lenientString, lenientOptionalNumber } from "./validation.js";
+import { lenientString, lenientOptionalNumber, lenientOptionalBoolean } from "./validation.js";
 import { logSearchWarnings, withSearchNotices } from "./searchNotes.js";
 import { checkpoint } from "agnost";
 
@@ -36,6 +36,7 @@ const WEB_SEARCH_ANNOTATIONS = {
 type WebSearchArgs = {
   query: string;
   numResults?: number;
+  dynamicHighlights?: boolean;
 };
 
 export function registerWebSearchTool(
@@ -46,7 +47,7 @@ export function registerWebSearchTool(
   const toolId = toolName || "web_search_exa";
 
   const handler = async (args: WebSearchArgs) => {
-    const { query, numResults } = args;
+    const { query, numResults, dynamicHighlights } = args;
     const logger = createRequestLogger(toolId);
 
     // Extract category:<type> from query string if present
@@ -76,11 +77,14 @@ export function registerWebSearchTool(
         numResults: numResults || API_CONFIG.DEFAULT_NUM_RESULTS,
         ...(category && { category }),
         contents: {
-          highlights: true,
+          highlights: dynamicHighlights ? { dynamic: true } : true,
         },
       };
 
-      const headers = integrationHeaders("web-search-mcp", config);
+      const headers = {
+        ...integrationHeaders("web-search-mcp", config),
+        ...(dynamicHighlights && { "Exa-Beta": "dynamic-highlights-2026-08-28" }),
+      };
 
       checkpoint("web_search_request_prepared");
       logger.log("Sending request to Exa API");
@@ -180,6 +184,9 @@ export function registerWebSearchTool(
       inputSchema: {
         query: queryParam,
         numResults: numResultsParam,
+        dynamicHighlights: lenientOptionalBoolean().describe(
+          "Opt into Dynamic Highlights research preview to select passages across results (default: false).",
+        ),
       },
       annotations: WEB_SEARCH_ANNOTATIONS,
     },
